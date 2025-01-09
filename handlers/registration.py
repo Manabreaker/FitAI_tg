@@ -1,7 +1,11 @@
+import os
+
 from aiogram import types
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from config import user_data_path
 from fit_ai import FitAI
 
 # Словарь для хранения клиентов FitAI, привязанных к каждому пользователю
@@ -107,6 +111,7 @@ def register_handlers(dp):
 
         # Создание клиента FitAI
         user_ai_clients[user_id] = FitAI(
+            user_id=user_id,
             user_name=user_data['name'],
             user_age=user_data['age'],
             user_sex=user_data['sex'],
@@ -116,9 +121,19 @@ def register_handlers(dp):
             user_skill=user_data['skill']
         )
 
+        user_file_path = os.path.join(user_data_path, f"{user_id}.txt")
+        with open(user_file_path, "w", encoding="utf-8") as file:
+            file.write(
+                f"[system] Вы являетесь моделью искусственного интеллекта FItAI и созданы для того чтобы помогать людям в достижении их спортивных целей. Вы профессиональный фитнес-тренер и диетолог. Вы создаете индивидуальные планы питания и программы тренировок на основе информации, введенной пользователем. Вы всегда следуете инструкциям пользователя. Помните, что отвечать нужно только на русском языке. И постарайтесь не задавать лишних вопросов, строго следовать указаниям пользователя и не делать ничего лишнего. Ваш ответ всегда краток, ясен и хорошо структурирован. Вы всегда указываете порядок выполнения упражнений их количество и граммовку еды в тренировках и рационах.\n" +
+                f"[assistant] Привет! Я ваш персональный фитнес ассистент, FitAI. Я помогу вам в достижении ваших целей в области фитнеса и правильного питания. В чем вам нужна помощь сегодня?\n" +
+                f"[user] Привет! Меня зовут: {user_data['name']}, моя цель это {user_data['goal']}. Уровень подготовки: {user_data['skill']}. Вес: {user_data['weight']} кг, рост: {user_data['height']} см, возраст: {user_data['age']}, пол: {user_data['sex']}.\n"
+            )
+
+
         # Подтверждение завершения регистрации
         await callback_query.message.answer(
             f"Регистрация завершена! Вот ваши данные:\n"
+            f"id: {user_id}\n"
             f"Имя: {user_data['name']}\n"
             f"Возраст: {user_data['age']}\n"
             f"Пол: {user_data['sex']}\n"
