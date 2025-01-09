@@ -1,6 +1,6 @@
 import os
 from g4f.client import AsyncClient
-from config import g4f_model_name, TestMode
+from config import g4f_model_name, TestMode, user_data_path
 from typing import List, Dict
 
 class FitAI:
@@ -11,7 +11,8 @@ class FitAI:
                  user_sex: str = 'Пользователь не указал свой пол',
                  user_weight: float = None,
                  user_height: float = None,
-                 user_skill: str = 'Пользователь не указал свой уровень подготовки'):
+                 user_skill: str = 'Пользователь не указал свой уровень подготовки',
+                 user_data_path: str = user_data_path):
         self.user_skill = user_skill
         self.user_name = user_name
         self.model_name = model_name
@@ -38,7 +39,7 @@ class FitAI:
         ]
 
         # Создание папки для хранения данных пользователей
-        self.user_data_path = "user_data"
+        self.user_data_path = user_data_path
         os.makedirs(self.user_data_path, exist_ok=True)
         self.user_file_path = os.path.join(self.user_data_path, f"{self.user_id}.txt")
 
@@ -71,14 +72,14 @@ class FitAI:
     async def chat_with_fitai(self, user_message: str) -> str:
         try:
             self.log_message("user", user_message)
-            response = await self.client.chat.completions.create(
-                model=self.model_name,
-                messages=self.messages
-            )
             self.messages.append({
                 'role': 'user',
                 'content': user_message
             })
+            response = await self.client.chat.completions.create(
+                model=self.model_name,
+                messages=self.messages
+            )
             assistant_message = response.choices[0].message.content
             self.messages.append({
                 'role': 'assistant',
