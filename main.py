@@ -1,24 +1,26 @@
-from aiogram import Bot, Dispatcher
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from aiogram.utils import executor # - ?
-from config import TOKEN
-from handlers import registration, menu
+# main.py
 
-# Telegram bot initialization
-storage = MemoryStorage()
-bot = Bot(token=TOKEN)
-dp = Dispatcher(bot, storage=storage)
-scheduler = AsyncIOScheduler()
+import asyncio
 
-# Register handlers
-registration.register_handlers(dp)
-menu.register_handlers(dp, scheduler)
+from aiogram import Bot
+from config import TELEGRAM_BOT_TOKEN
+from db import init_db
+from init_bot import bot, dp
+from handlers.registration import registration_router
+from handlers.menu import menu_router
+
+
+async def main():
+    # Инициализация БД
+    init_db()
+
+    # Подключаем роутеры
+    dp.include_router(registration_router)
+    dp.include_router(menu_router)
+
+    # Запускаем поллинг
+    await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
-    async def main():
-        scheduler.start()
-        await dp.start_polling()
-
-    import asyncio
     asyncio.run(main())

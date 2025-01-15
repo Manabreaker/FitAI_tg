@@ -1,4 +1,20 @@
-TestMode = True
-TOKEN = "YOUR_BOT_TOCKEN"
-g4f_model_name = 'gpt-4' # allowed models: gpt4, gpt-4o, gpt-4o-mini, gpt3.5
-user_data_path = 'user_data'
+# config.py
+
+# Telegram Bot token
+TELEGRAM_BOT_TOKEN = "7389014384:AAELuvU5Rel2JUaO13v4SWI-lqkl94yQ_6k" # "YOUR_TELEGRAM_TOKEN"
+
+# PostgreSQL connection
+POSTGRES_DB = "bot_db"
+POSTGRES_USER = "bot_user"
+POSTGRES_PASSWORD = "bot_pass"
+POSTGRES_HOST = "localhost"
+POSTGRES_PORT = 5432
+
+# SQLAlchemy connection URI
+SQLALCHEMY_DATABASE_URI = (
+    f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
+    f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
+
+# GigaChat API key
+GigaChatKey = 'ZTYwYmEwYmYtODUzMC00Y2Q5LTk4ZDktNmVkYzg5NGM3YzdkOmMwNzYwZWY5LWRhMzEtNGFiZS1hNTQyLTYyNGVkOTlkMGRlYQ==' # YOUR_GIGACHAT_API_KEY

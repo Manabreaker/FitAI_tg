@@ -1,52 +1,84 @@
-from aiogram import types
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
-from handlers.registration import user_ai_clients  # Импорт словаря клиентов
+# handlers/menu.py
 
-def register_handlers(dp, scheduler):
-    @dp.message_handler(commands=['menu'])
-    async def menu_handler(message: types.Message):
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(
-            KeyboardButton("Составление рациона"),
-            KeyboardButton("Составление программы тренировок"),
-            KeyboardButton("Чат с FitAI")
-        )
-        await message.answer("Главное меню:", reply_markup=keyboard)
+from aiogram import Router
+from aiogram.filters.command import Command
+from aiogram.types import Message
 
-    @dp.message_handler(lambda message: message.text == "Составление программы тренировок")
-    async def workout_plan_handler(message: types.Message):
-        user_id = message.from_user.id
-        ai_client = user_ai_clients.get(user_id)
-        if ai_client:
-            workout_plan = await ai_client.generate_workout_plan()
-            await message.answer(f"Ваша программа тренировок:\n{workout_plan}", parse_mode="Markdown")
-        else:
-            await message.answer("Вы не прошли регистрацию. Используйте команду /start.")
+from db import SessionLocal, User
+from fit_ai import FitAI
 
-    @dp.message_handler(lambda message: message.text == "Составление рациона")
-    async def meal_plan_handler(message: types.Message):
-        user_id = message.from_user.id
-        ai_client = user_ai_clients.get(user_id)
-        if ai_client:
-            meal_plan = await ai_client.generate_meal_plan()
-            await message.answer(f"Ваш рацион питания:\n{meal_plan}", parse_mode="Markdown")
-        else:
-            await message.answer("Вы не прошли регистрацию. Используйте команду /start.")
+menu_router = Router()
 
-    @dp.message_handler(lambda message: message.text == "Чат с FitAI")
-    async def chat_handler(message: types.Message):
-        user_id = message.from_user.id
-        ai_client = user_ai_clients.get(user_id)
-        if ai_client:
-            await message.answer("Привет! Я ваш персональный фитнес ассистент, FitAI. Я помогу вам в достижении ваших целей в области фитнеса и правильного питания. В чем вам нужна помощь сегодня?")
-        else:
-            await message.answer("Вы не прошли регистрацию. Используйте команду /start.")
 
-    @dp.message_handler()
-    async def default_chat_handler(message: types.Message):
-        user_id = message.from_user.id
-        ai_client = user_ai_clients.get(user_id)
-        if ai_client:
-            response = await ai_client.chat_with_fitai(message.text)
-            await message.answer(response, parse_mode="Markdown")
-        else:
-            await message.answer("Вы не прошли регистрацию. Используйте команду /start.")
+async def handle_fitai_request(message: Message, user_text: str):
+    """
+    Общая функция для обработки запроса к FitAI:
+    1. Проверяем, зарегистрирован ли пользователь.
+    2. Если да — создаём FitAI и отправляем запрос.
+    3. Возвращаем ответ пользователю.
+    """
+    user_tg_id = message.from_user.id
+
+    # Проверяем, есть ли пользователь в базе
+    db_session = SessionLocal()
+    try:
+        user = db_session.query(User).filter_by(tg_id=user_tg_id).first()
+        if not user:
+            await message.answer("Сначала пройдите регистрацию /start")
+            return
+    finally:
+        db_session.close()
+
+    # Создаём FitAI
+    fit_ai = FitAI(user_tg_id=user_tg_id)
+    reply = await fit_ai.chat(user_text)
+    await message.answer(reply)
+
+
+@menu_router.message(Command("menu"))
+async def cmd_menu(message: Message):
+    text = (
+        "Меню FitAI:\n"
+        "/meal_plan — Составить рацион\n"
+        "/workout_plan — Составить программу тренировок\n"
+        "/chat <ваш вопрос> — Начать диалог с FitAI\n"
+    )
+    await message.answer(text)
+
+
+@menu_router.message(Command("meal_plan"))
+async def cmd_meal_plan(message: Message):
+    # Текст-запрос к ИИ
+    user_text = (
+        "Составь рацион питания для меня, учитывая все мои данные: "
+        "возраст, пол, вес, рост, уровень, цель."
+    )
+    # Асинхронно обрабатываем запрос
+    await handle_fitai_request(message, user_text)
+
+
+@menu_router.message(Command("workout_plan"))
+async def cmd_workout_plan(message: Message):
+    # Текст-запрос к ИИ
+    user_text = (
+        "Составь для меня программу тренировок, "
+        "учитывая все мои параметры и цель."
+    )
+    await handle_fitai_request(message, user_text)
+
+
+@menu_router.message(Command("chat"))
+async def cmd_chat(message: Message):
+    """
+    Команда для любого произвольного вопроса к FitAI.
+    Пример использования: /chat Привет, подскажи, как начать бегать?
+    """
+    # Извлекаем текст запроса (всё, что после /chat)
+    # Если пользователь ввёл только "/chat" - проверим этот случай
+    user_text_parts = message.text.strip().split(maxsplit=1)
+    if len(user_text_parts) < 2:
+        await message.answer("Пожалуйста, введите вопрос после команды /chat.")
+        return
+
+    user_text = user_text_parts[1]
+    await handle_fitai_request(message, user_text)
