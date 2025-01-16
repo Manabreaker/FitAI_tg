@@ -1,20 +1,18 @@
-# config.py
-
 # Telegram Bot token
 TELEGRAM_BOT_TOKEN = "7389014384:AAELuvU5Rel2JUaO13v4SWI-lqkl94yQ_6k" # "YOUR_TELEGRAM_TOKEN"
 
-# PostgreSQL connection
+# Параметры PostgreSQL
 POSTGRES_DB = "bot_db"
 POSTGRES_USER = "bot_user"
 POSTGRES_PASSWORD = "bot_pass"
 POSTGRES_HOST = "localhost"
 POSTGRES_PORT = 5432
 
-# SQLAlchemy connection URI
+#  URI подключения к SQLAlchemy
 SQLALCHEMY_DATABASE_URI = (
     f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
     f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 )
 
 # GigaChat API key
-GigaChatKey = 'ZTYwYmEwYmYtODUzMC00Y2Q5LTk4ZDktNmVkYzg5NGM3YzdkOmMwNzYwZWY5LWRhMzEtNGFiZS1hNTQyLTYyNGVkOTlkMGRlYQ==' # YOUR_GIGACHAT_API_KEY
+GigaChatKey = 'ZTYwYmEwYmYtODUzMC00Y2Q5LTk4ZDktNmVkYzg5NGM3YzdkOmMwNzYwZWY5LWRhMzEtNGFiZS1hNTQyLTYyNGVkOTlkMGRlYQ==' # "YOUR_GIGACHAT_API_KEY"

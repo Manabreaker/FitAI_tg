@@ -1,14 +1,8 @@
-# main.py
-
 import asyncio
-
-from aiogram import Bot
-from config import TELEGRAM_BOT_TOKEN
 from db import init_db
 from init_bot import bot, dp
 from handlers.registration import registration_router
 from handlers.menu import menu_router
-
 
 async def main():
     # Инициализация БД
@@ -20,7 +14,6 @@ async def main():
 
     # Запускаем поллинг
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
