@@ -19,7 +19,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 # "заданий неактивности"
 # user_tg_id -> job_id (str)
 # ---------------------------
-inactivity_jobs = {}
+
 
 scheduler = AsyncIOScheduler()
 scheduler.start()
@@ -97,6 +97,38 @@ def _list_notifications(user_id: int) -> list:
         db_session.close()
 
 
+def schedule_existing_notifications():
+    """
+    Восстанавливает задачи уведомлений (включая неактивность) из БД в Apscheduler.
+    """
+    db_session = SessionLocal()
+    try:
+        notifs = db_session.query(Notification).all()
+        for notif in notifs:
+            user = db_session.query(User).filter_by(id=notif.user_id).first()
+            if not user:
+                continue
+
+            run_date = notif.time_utc  # время в UTC
+
+            if notif.kind == "inactivity":
+                # Планируем задачу handle_inactivity
+                scheduler.add_job(
+                    func=partial(asyncio.create_task, handle_inactivity(user.id)),
+                    trigger='date',
+                    run_date=run_date
+                )
+            else:
+                # Это обычное уведомление
+                scheduler.add_job(
+                    func=partial(asyncio.create_task, _notify_user(user.tg_id, notif.message)),
+                    trigger='date',
+                    run_date=run_date
+                )
+    finally:
+        db_session.close()
+
+
 def _update_notification(user_id: int, notification_id: int,
                          new_message: str = None,
                          new_time_str: str = None):
@@ -153,43 +185,61 @@ def _delete_notification(user_id: int, notification_id: int):
         db_session.close()
 
 
-async def handle_inactivity(user_tg_id: int):
+async def handle_inactivity(user_id: int):
     """
-    Функция, которая вызывается после 7 дней неактивности пользователя.
-    Генерирует мотивацию "замотивируй меня..." от имени пользователя
-    и отправляет ответ реальному пользователю.
+    Функция, которая вызывается через 7 дней неактивности.
     """
-    fit_ai = FitAI(user_tg_id)
-    # "Системно" отправляем сообщение от имени пользователя,
-    # чтобы вызвать логику chat()
-    response = await fit_ai.chat("Замотивируй меня начать правильно питаться и заниматься спортом!")
-    # Отправим результат реальному пользователю
-    # (если модель вернёт function_call, цикл продолжится и в итоге всё же вернётся final_answer)
-    user = fit_ai.user
-    if user:
-        await bot.send_message(chat_id=user.tg_id, text=response)
+    db_session = SessionLocal()
+    try:
+        user = db_session.query(User).filter_by(id=user_id).first()
+        if not user:
+            return
+        user_tg_id = user.tg_id
+    finally:
+        db_session.close()
+
+    fit_ai = FitAI(user_tg_id)  # передаём Telegram ID, чтобы FitAI знал пользователя
+    response = await fit_ai.chat("Замотивируй меня продолжать занятия спортом и питаться правильно!")
+
+    # Отправляем сообщение пользователю
+    await bot.send_message(chat_id=user_tg_id, text=response)
 
 
-def schedule_inactivity_job(user_tg_id: int, days: int = 7):
+def schedule_inactivity_job(user_id: int, days: int = 7):
     """
-    Ставим (или перезапускаем) задание в планировщике на неактивность.
-    Если юзер не напишет ничего в течение days, сработает handle_inactivity.
+    Сохраняем (или перезаписываем) задание о неактивности в БД (kind='inactivity').
+    А затем добавляем в Apscheduler.
     """
-    # Удаляем старое задание, если было
-    old_job_id = inactivity_jobs.get(user_tg_id)
-    if old_job_id:
-        try:
-            scheduler.remove_job(old_job_id)
-        except:
-            pass
+    db_session = SessionLocal()
+    try:
+        # Удалим старое уведомление 'inactivity' (если есть)
+        existing_notifs = db_session.query(Notification).filter_by(
+            user_id=user_id,
+            kind='inactivity'
+        ).all()
+        for old in existing_notifs:
+            db_session.delete(old)
+        db_session.commit()
 
-    run_date = datetime.datetime.now() + datetime.timedelta(days=days)
-    new_job = scheduler.add_job(
-        func=partial(asyncio.create_task, handle_inactivity(user_tg_id)),
-        trigger='date',
-        run_date=run_date
-    )
-    inactivity_jobs[user_tg_id] = new_job.id
+        # Создадим новое
+        run_date = datetime.datetime.utcnow() + datetime.timedelta(days=days)
+        new_notif = Notification(
+            user_id=user_id,
+            time_utc=run_date,
+            message="INACTIVITY_REMINDER",  # условное сообщение
+            kind="inactivity"
+        )
+        db_session.add(new_notif)
+        db_session.commit()
+
+        # Планируем в Apscheduler задачу
+        scheduler.add_job(
+            func=partial(asyncio.create_task, handle_inactivity(user_id)),
+            trigger='date',
+            run_date=run_date
+        )
+    finally:
+        db_session.close()
 
 
 class FitAI:
@@ -305,7 +355,8 @@ class FitAI:
 
         # Каждый раз, когда пользователь/приложение вызывает chat(...),
         # мы перезапускаем таймер неактивности на 7 дней:
-        schedule_inactivity_job(self.user_tg_id, days=7)
+        schedule_inactivity_job(self.user.id, days=7)
+
 
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         user_info = (
