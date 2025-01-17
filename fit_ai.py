@@ -22,7 +22,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 inactivity_jobs = {}
 
 scheduler = AsyncIOScheduler()
-scheduler.start()               
+scheduler.start()
 
 
 async def _notify_user(tg_id: int, text: str):
@@ -319,6 +319,8 @@ class FitAI:
             f"Текущее время (UTC): {now_utc}"
         )
 
+        user_message += '\n Сообщение отправлено в ' + datetime.datetime.now().isoformat()
+
         system_text = (
             "Вы являетесь моделью искусственного интеллекта FitAI и созданы для того, чтобы помогать людям в достижении их спортивных целей. "
             "Вы профессиональный фитнес-тренер и диетолог. Вы создаёте индивидуальные планы питания и программы тренировок на основе информации, введённой пользователем. "
@@ -329,6 +331,7 @@ class FitAI:
             "Если вы вызываете функцию(ии), напишите только JSON без лишнего текста. При использовании функций не нужно писать обычный текст ответа для пользователя. "
             "Если функция выполнена, вы получите system-сообщение 'Функция выполнена успешно' — после этого вы можете отправить ответ пользователю.\n\n"
             f"Данные о пользователе:\n{user_info}\n"
+            f"Данные о функциях:\n{self.functions_schemas}"
         )
 
         conversation = await self._load_history_as_langchain_messages()
