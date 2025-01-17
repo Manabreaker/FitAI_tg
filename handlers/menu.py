@@ -40,8 +40,8 @@ async def cmd_menu(message: Message):
 @menu_router.message(Command("meal_plan"))
 async def cmd_meal_plan(message: Message):
     user_text = (
-        "Составь рацион питания для меня, учитывая мои данные "
-        "(возраст, пол, вес, рост, цель, уровень)."
+        "Составь рацион питания для меня, учитывая мои данные, "
+        "(возраст, пол, вес, рост, цель, уровень). И не задавай дополнительных вопросов, создай напоминание для каждого приема пищи. Обязательно используй Function calling."
     )
     await handle_fitai_request(message, user_text)
 
@@ -50,7 +50,7 @@ async def cmd_meal_plan(message: Message):
 async def cmd_workout_plan(message: Message):
     user_text = (
         "Составь программу тренировок для меня, "
-        "учитывая мои данные (возраст, пол, вес, рост, цель, уровень)."
+        "учитывая мои данные (возраст, пол, вес, рост, цель, уровень). И не задавай дополнительных вопросов, создай напоминание для каждой тренировки. Обязательно используй Function calling."
     )
     await handle_fitai_request(message, user_text)
 

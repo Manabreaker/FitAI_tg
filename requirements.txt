@@ -1,0 +1,7 @@
+aiogram==3.17.0
+apscheduler==3.9.1
+sqlalchemy==2.0.4
+langchain_community==0.3.14
+psycopg2==2.9.6
+langchain==0.3.14
+gigachat==0.1.37.post1

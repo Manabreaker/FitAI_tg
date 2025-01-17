@@ -1,195 +1,27 @@
+# fit_ai.py
+
 import asyncio
 import datetime
 import json
 import re
 
-import pytz  # Для работы с часовыми поясами
-from functools import partial
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
-
 from langchain_community.chat_models import GigaChat
+
+from db import SessionLocal, User, MessageLog
 from config import GigaChatKey
-from db import SessionLocal, User, MessageLog, Notification
 from init_bot import bot
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+# Импортируем функции для function calling:
+from function_calling.manager import (
+    create_notification_fn,
+    list_notifications_fn,
+    update_notification_fn,
+    delete_notification_fn
+)
 
-# ---------------------------
-# Глобальное хранилище для
-# "заданий неактивности"
-# user_tg_id -> job_id (str)
-# ---------------------------
-inactivity_jobs = {}
-
-scheduler = AsyncIOScheduler()
-scheduler.start()
-
-
-async def _notify_user(tg_id: int, text: str):
-    """Отправка уведомления пользователю через Телеграм."""
-    await bot.send_message(chat_id=tg_id, text=text.replace('#', ''), parse_mode='Markdown')
-
-
-def _schedule_notification(user_id: int, local_dt_str: str, message: str):
-    """
-    Создание уведомления для пользователя: конвертируем локальное время
-    в UTC и планируем задачу в APS.
-    """
-    db_session = SessionLocal()
-    try:
-        user = db_session.query(User).filter_by(id=user_id).first()
-        if not user:
-            return
-
-        user_tz_name = user.timezone or "UTC"
-        user_tz = pytz.timezone(user_tz_name)
-
-        try:
-            local_dt = datetime.datetime.fromisoformat(local_dt_str)
-            if local_dt.tzinfo is None:
-                local_dt = user_tz.localize(local_dt)
-        except ValueError:
-            return
-
-        dt_utc = local_dt.astimezone(pytz.utc)
-
-        notif = Notification(
-            user_id=user.id,
-            time_utc=dt_utc,
-            message=message
-        )
-        db_session.add(notif)
-        db_session.commit()
-
-        scheduler.add_job(
-            func=partial(asyncio.create_task, _notify_user(user.tg_id, message)),
-            trigger='date',
-            run_date=dt_utc
-        )
-    finally:
-        db_session.close()
-
-
-def _list_notifications(user_id: int) -> list:
-    """
-    Возвращаем список уведомлений пользователя в локальном времени.
-    """
-    db_session = SessionLocal()
-    try:
-        user = db_session.query(User).filter_by(id=user_id).first()
-        if not user:
-            return []
-
-        notifs = db_session.query(Notification).filter_by(user_id=user.id).all()
-        result = []
-        for n in notifs:
-            user_tz_name = user.timezone or "UTC"
-            user_tz = pytz.timezone(user_tz_name)
-            local_dt = n.time_utc.astimezone(user_tz)
-            time_str = local_dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-            result.append({
-                "id": n.id,
-                "message": n.message,
-                "time": time_str
-            })
-        return result
-    finally:
-        db_session.close()
-
-
-def _update_notification(user_id: int, notification_id: int,
-                         new_message: str = None,
-                         new_time_str: str = None):
-    """Изменяем уведомление и перезапланируем его отправку."""
-    db_session = SessionLocal()
-    try:
-        user = db_session.query(User).filter_by(id=user_id).first()
-        if not user:
-            return
-
-        notif = db_session.query(Notification).filter_by(id=notification_id, user_id=user.id).first()
-        if not notif:
-            return
-
-        if new_message is not None:
-            notif.message = new_message
-
-        if new_time_str is not None:
-            try:
-                local_dt = datetime.datetime.fromisoformat(new_time_str)
-                if local_dt.tzinfo is None:
-                    user_tz = pytz.timezone(user.timezone or "UTC")
-                    local_dt = user_tz.localize(local_dt)
-                dt_utc = local_dt.astimezone(pytz.utc)
-                notif.time_utc = dt_utc
-            except ValueError:
-                pass
-
-        db_session.commit()
-
-        # Перезапланируем (упрощённо, без удаления старой задачи)
-        scheduler.add_job(
-            func=partial(asyncio.create_task, _notify_user(user.tg_id, notif.message)),
-            trigger='date',
-            run_date=notif.time_utc
-        )
-    finally:
-        db_session.close()
-
-
-def _delete_notification(user_id: int, notification_id: int):
-    """Удаляем уведомление из БД (в APScheduler старое задание не убираем)."""
-    db_session = SessionLocal()
-    try:
-        user = db_session.query(User).filter_by(id=user_id).first()
-        if not user:
-            return
-
-        notif = db_session.query(Notification).filter_by(id=notification_id, user_id=user.id).first()
-        if notif:
-            db_session.delete(notif)
-            db_session.commit()
-    finally:
-        db_session.close()
-
-
-async def handle_inactivity(user_tg_id: int):
-    """
-    Функция, которая вызывается после 7 дней неактивности пользователя.
-    Генерирует мотивацию "замотивируй меня..." от имени пользователя
-    и отправляет ответ реальному пользователю.
-    """
-    fit_ai = FitAI(user_tg_id)
-    # "Системно" отправляем сообщение от имени пользователя,
-    # чтобы вызвать логику chat()
-    response = await fit_ai.chat("Замотивируй меня начать правильно питаться и заниматься спортом!")
-    # Отправим результат реальному пользователю
-    # (если модель вернёт function_call, цикл продолжится и в итоге всё же вернётся final_answer)
-    user = fit_ai.user
-    if user:
-        await bot.send_message(chat_id=user.tg_id, text=response)
-
-
-def schedule_inactivity_job(user_tg_id: int, days: int = 7):
-    """
-    Ставим (или перезапускаем) задание в планировщике на неактивность.
-    Если юзер не напишет ничего в течение days, сработает handle_inactivity.
-    """
-    # Удаляем старое задание, если было
-    old_job_id = inactivity_jobs.get(user_tg_id)
-    if old_job_id:
-        try:
-            scheduler.remove_job(old_job_id)
-        except:
-            pass
-
-    run_date = datetime.datetime.now() + datetime.timedelta(days=days)
-    new_job = scheduler.add_job(
-        func=partial(asyncio.create_task, handle_inactivity(user_tg_id)),
-        trigger='date',
-        run_date=run_date
-    )
-    inactivity_jobs[user_tg_id] = new_job.id
+# Импортируем функции для уведомлений «неактивности»
+from notifications.manager import schedule_inactivity_job
 
 
 class FitAI:
@@ -220,7 +52,7 @@ class FitAI:
                         "time": {
                             "type": "string",
                             "format": "date-time",
-                            "description": "Время (ISO8601) локального ч.п. или со смещением"
+                            "description": "Локальное время (ISO8601) для уведомления, например: 2025-01-18T14:00:00+03:00"
                         }
                     },
                     "required": ["user_id", "message", "time"]
@@ -299,15 +131,17 @@ class FitAI:
         )
 
     async def chat(self, user_message: str) -> str:
-        """Основной метод диалога."""
+        """Основной метод диалога с моделью."""
         if not self.user:
             return "Пользователь не найден. Сначала пройдите регистрацию."
 
-        # Каждый раз, когда пользователь/приложение вызывает chat(...),
-        # мы перезапускаем таймер неактивности на 7 дней:
-        schedule_inactivity_job(self.user_tg_id, days=7)
+        # При каждом новом сообщении «обнуляем» таймер неактивности
+        schedule_inactivity_job(self.user.id, days=7)
 
+        # Подготовим system prompt:
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        current_weekday_utc = ('Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье')[
+            datetime.datetime.now(datetime.timezone.utc).weekday()]
         user_info = (
             f"Имя: {self.user.name}, "
             f"user_id: {self.user.id}, "
@@ -316,113 +150,136 @@ class FitAI:
             f"Вес: {self.user.weight}кг, Рост: {self.user.height}см, "
             f"Цель: {self.user.goal}, Уровень: {self.user.skill}, "
             f"Часовой пояс: {self.user.timezone}, "
-            f"Текущее время (UTC): {now_utc}"
+            f"Текущее время и день недели (UTC): {now_utc, current_weekday_utc} "
         )
-
-        user_message += '\n Сообщение отправлено в ' + datetime.datetime.now().isoformat()
+        current_weekday = ('Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье')[
+            datetime.datetime.now().weekday()]
+        user_message += f'\n Сообщение отправлено в: {datetime.datetime.now().isoformat()} {current_weekday}\n'
 
         system_text = (
-            "Вы являетесь моделью искусственного интеллекта FitAI и созданы для того, чтобы помогать людям в достижении их спортивных целей. "
-            "Вы профессиональный фитнес-тренер и диетолог. Вы создаёте индивидуальные планы питания и программы тренировок на основе информации, введённой пользователем. "
-            "Отвечайте только на русском языке, кратко, чётко и структурировано. "
-            "Ваши ответы включают порядок выполнения упражнений, количество подходов и повторений, вес снарядов, а также точную граммовку продуктов в рационах питания. "
-            "Вы всегда следуете инструкциям пользователя, не задаёте лишних вопросов и не добавляете ненужной информации.\n\n"
-            "Вы умеете работать с уведомлениями (создание, просмотр, изменение, удаление).\n\n"
-            "Если вы вызываете функцию(ии), напишите только JSON без лишнего текста. При использовании функций не нужно писать обычный текст ответа для пользователя. "
-            "Если функция выполнена, вы получите system-сообщение 'Функция выполнена успешно' — после этого вы можете отправить ответ пользователю.\n\n"
+            "Вы — FitAI, профессиональный фитнес-тренер и диетолог. "
+            "Отвечайте на русском, кратко и структурировано. "
+            "Умеете вызывать функции create_notification / list_notifications / update_notification / delete_notification. "
+            "Если используете функцию, верните ТОЛЬКО JSON, без дополнительного текста. "
+            "После выполнения функции сможете продолжить ответ.\n\n"
             f"Данные о пользователе:\n{user_info}\n"
-            f"Данные о функциях:\n{self.functions_schemas}"
+            f"Схемы функций:\n{self.functions_schemas}"
+            "\n\n"
+            "Примеры использования функций:\n"
+            "   {\n"
+            "       \"name\": \"create_notification\",\n"
+            "       \"parameters\": {\n"
+            "           \"user_id\": \"1\",\n"
+            "           \"message\": \"Напоминание: время тренировки подошло!\",\n"
+            "           \"time\": \"2025-01-17T09:00:00+03:00\"\n"
+            "       }\n"
+            "   }\n\n"
+            "2. list_notifications(user_id) — получить список уведомлений.\n"
+            "   Пример:\n"
+            "   {\n"
+            "       \"name\": \"list_notifications\",\n"
+            "       \"parameters\": {\n"
+            "           \"user_id\": \"1\"\n"
+            "       }\n"
+            "   }\n"
+            "   Ответ функции:\n"
+            "   [\n"
+            "       {\"id\": 101, \"message\": \"Напоминание: время тренировки подошло!\", \"time\": \"2025-01-17T09:00:00+03:00\"},\n"
+            "       {\"id\": 102, \"message\": \"Напоминание: пора размяться!\", \"time\": \"2025-01-18T14:00:00+03:00\"}\n"
+            "   ]\n\n"
+            "3. update_notification(user_id, notification_id, message, time) — изменить текст или время уведомления.\n"
+            "   Пример:\n"
+            "   {\n"
+            "       \"name\": \"update_notification\",\n"
+            "       \"parameters\": {\n"
+            "           \"user_id\": \"1\",\n"
+            "           \"notification_id\": 101,\n"
+            "           \"message\": \"Напоминание: изменённое время тренировки!\",\n"
+            "           \"time\": \"2025-01-17T10:00:00+03:00\"\n"
+            "       }\n"
+            "   }\n\n"
+            "4. delete_notification(user_id, notification_id) — удалить уведомление.\n"
+            "   Пример:\n"
+            "   {\n"
+            "       \"name\": \"delete_notification\",\n"
+            "       \"parameters\": {\n"
+            "           \"user_id\": \"1\",\n"
+            "           \"notification_id\": 101\n"
+            "       }\n"
+            "   }\n\n"
+            "Если нужно вызвать функцию, вы должны вернуть JSON, как в примерах."
         )
 
+        # Превращаем историю диалога в LangChain-месседжи
         conversation = await self._load_history_as_langchain_messages()
         conversation.insert(0, SystemMessage(content=system_text))
         conversation.append(HumanMessage(content=user_message))
 
+        # Вызываем GigaChat
         assistant_response = await asyncio.to_thread(self.llm.invoke, conversation)
         assistant_text = assistant_response.content
 
-        # Сохраняем входящее сообщение пользователя
+        # Сохраняем входящее сообщение пользователя (role="user")
+        user_message += '\n Сообщение отправлено в ' + datetime.datetime.now().isoformat()
         await self._save_message(role="user", content=user_message)
 
         final_answer = ""
         while True:
-            # Ищем функции
+            # Ищем JSON-функции
             function_calls = self._extract_multiple_json_objects(assistant_text)
 
             if not function_calls:
-                # Обычный текст
+                # Нет функций — обычный ответ от ассистента
                 await self._save_message(role="assistant", content=assistant_text)
                 final_answer = assistant_text
                 break
 
-            # Сохраняем ответ ассистента как есть (но не показываем пользователю напрямую)
+            # Сохраняем ответ ассистента (как он есть, без отправки юзеру)
             await self._save_message(role="assistant", content=assistant_text)
 
-            # Обрабатываем каждую функцию
+            # Выполняем каждую функцию
             for fc in function_calls:
                 fname = fc.get("name")
-                # Исправление: берём параметры из "parameters", а не "arguments"
                 fargs = fc.get("parameters", {})
 
+                # Сохраняем отдельным сообщением запись о вызове функции
                 await self._save_message(
-                    role="assistant",
-                    content="(function_call)",
+                    role="user",
+                    content=f"Функция была вызвана успешно. Теперь ты сообщишь об этом пользователю! Сказав, что все прошло успешно! Текущее время: {datetime.datetime.now().isoformat()}",
                     function_name=fname,
                     function_args=json.dumps(fargs, ensure_ascii=False)
                 )
 
                 if fname == "create_notification":
-                    user_id_str = fargs.get("user_id")
-                    msg_text = fargs.get("message")
-                    time_str = fargs.get("time")
-                    if user_id_str and msg_text and time_str:
-                        try:
-                            uid_int = int(user_id_str)
-                            _schedule_notification(uid_int, time_str, msg_text)
-                        except ValueError:
-                            pass
-
+                    create_notification_fn(
+                        user_id_str=fargs.get("user_id", ""),
+                        msg_text=fargs.get("message", ""),
+                        time_str=fargs.get("time", "")
+                    )
                 elif fname == "list_notifications":
-                    user_id_str = fargs.get("user_id")
-                    if user_id_str:
-                        try:
-                            uid_int = int(user_id_str)
-                            notifs = _list_notifications(uid_int)
-                            # Делаем "обратную связь" для модели:
-                            # добавляем "сообщение" о списке уведомлений
-                            # как если бы пользователь ответил модельке
-                            # (чтобы она могла среагировать в следующем шаге)
-                            conversation.append(HumanMessage(
-                                content=f"NOTIFICATION_LIST={json.dumps(notifs, ensure_ascii=False)}"
-                            ))
-                        except ValueError:
-                            pass
-
+                    notifs = list_notifications_fn(
+                        user_id_str=fargs.get("user_id", "")
+                    )
+                    # Добавим "ответ" от пользователя с этим списком
+                    conversation.append(HumanMessage(
+                        content=f"NOTIFICATION_LIST={json.dumps(notifs, ensure_ascii=False)}"
+                    ))
                 elif fname == "update_notification":
-                    user_id_str = fargs.get("user_id")
-                    notification_id = fargs.get("notification_id")
-                    new_msg = fargs.get("message")
-                    new_time = fargs.get("time")
-                    if user_id_str and notification_id is not None:
-                        try:
-                            uid_int = int(user_id_str)
-                            _update_notification(uid_int, notification_id, new_msg, new_time)
-                        except ValueError:
-                            pass
-
+                    update_notification_fn(
+                        user_id_str=fargs.get("user_id", ""),
+                        notification_id=fargs.get("notification_id", None),
+                        new_msg=fargs.get("message", None),
+                        new_time=fargs.get("time", None)
+                    )
                 elif fname == "delete_notification":
-                    user_id_str = fargs.get("user_id")
-                    notification_id = fargs.get("notification_id")
-                    if user_id_str and notification_id is not None:
-                        try:
-                            uid_int = int(user_id_str)
-                            _delete_notification(uid_int, notification_id)
-                        except ValueError:
-                            pass
+                    delete_notification_fn(
+                        user_id_str=fargs.get("user_id", ""),
+                        notification_id=fargs.get("notification_id", None),
+                    )
 
-            # Добавляем "от пользователя" сообщение: "Функция выполнена успешно"
-            conversation.append(HumanMessage(content="Функция выполнена успешно."))
-
+            # После выполнения функций даём модели ещё раз «подумать»
+            conversation = await self._load_history_as_langchain_messages()
+            # conversation.append(HumanMessage(content="Функция выполнена успешно."))
             new_response = await asyncio.to_thread(self.llm.invoke, conversation)
             assistant_text = new_response.content
 
@@ -446,6 +303,7 @@ class FitAI:
     async def _load_history_as_langchain_messages(self):
         if not self.user:
             return []
+
         msgs = (
             self.db_session.query(MessageLog)
             .filter_by(user_id=self.user.id)
@@ -458,22 +316,22 @@ class FitAI:
                 lc_messages.append(SystemMessage(content=m.content))
             elif m.role == "assistant":
                 lc_messages.append(AIMessage(content=m.content))
-            elif m.role == "user":
+            else:  # "user" или что-то ещё
                 lc_messages.append(HumanMessage(content=m.content))
-            else:
-                lc_messages.append(HumanMessage(content=m.content))
+
         return lc_messages
 
     def _extract_multiple_json_objects(self, text: str):
         """
-        Извлекаем все подряд JSON-объекты (или массив [ {..}, {..} ]),
-        учитывая, что модель может присылать их в разном формате.
+        Извлекаем все JSON-объекты, если ассистент прислал несколько подряд.
+        Формат может быть как массив [ {...}, {...} ], так и несколько { ...}{ ...}.
         """
-        # Удаляем тройные кавычки
+        # Удаляем тройные кавычки и markdown-блоки
+        import re
         clean_text = re.sub(r"```(?:json)?(.*?)```", r"\1", text, flags=re.DOTALL).strip()
         results = []
 
-        # Сперва пробуем как массив
+        # 1) Пробуем распарсить всё как один JSON-массив
         arr = self._try_parse_json(clean_text)
         if isinstance(arr, list):
             for item in arr:
@@ -482,7 +340,7 @@ class FitAI:
             if results:
                 return results
 
-        # Если не массив — пробуем извлечь несколько подряд { } { }
+        # 2) Если не массив — пробуем искать подряд идущие объекты { } { }
         remaining = clean_text
         while True:
             remaining = remaining.lstrip()
@@ -494,7 +352,7 @@ class FitAI:
             results.append(obj)
             remaining = remaining[consumed_len:]
 
-        # Может быть один объект
+        # 3) Может быть один объект
         if not results:
             single_obj = self._try_parse_json(clean_text)
             if isinstance(single_obj, dict):
@@ -503,12 +361,14 @@ class FitAI:
         return results
 
     def _try_parse_json(self, raw_text: str):
+        import json
         try:
             return json.loads(raw_text)
         except json.JSONDecodeError:
             return None
 
     def _parse_first_json_object(self, raw_text: str):
+        import json
         bracket_stack = 0
         end_idx = 0
         for i, ch in enumerate(raw_text):

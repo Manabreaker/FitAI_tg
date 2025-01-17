@@ -63,9 +63,11 @@ class Notification(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     time_utc = Column(DateTime, nullable=False)  # Время напоминания (UTC)
     message = Column(String, nullable=False)
+    kind = Column(String, default="regular")  # <-- Тип уведомления: "regular" или "inactivity"
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="notifications")
+
 
 
 engine = create_engine(SQLALCHEMY_DATABASE_URI, echo=False)
