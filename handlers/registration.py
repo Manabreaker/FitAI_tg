@@ -19,7 +19,7 @@ class RegistrationForm(StatesGroup):
     height = State()
     goal = State()
     skill = State()
-    timezone = State()  # выбор часового пояса
+    timezone = State()
 
 @registration_router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -40,12 +40,12 @@ async def handle_age(message: Message, state: FSMContext):
             raise ValueError
         await state.update_data(age=age)
 
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[
                 InlineKeyboardButton(text="Мужской", callback_data="sex_Мужской"),
                 InlineKeyboardButton(text="Женский", callback_data="sex_Женский")
-            ]
-        ])
+            ]]
+        )
         await message.answer("Ваш пол:", reply_markup=kb)
         await state.set_state(RegistrationForm.sex)
     except ValueError:
@@ -79,13 +79,13 @@ async def handle_height(message: Message, state: FSMContext):
             raise ValueError
         await state.update_data(height=h)
 
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[
                 InlineKeyboardButton(text="Похудеть", callback_data="goal_Похудеть"),
                 InlineKeyboardButton(text="Набрать массу", callback_data="goal_Набрать массу"),
                 InlineKeyboardButton(text="Поддерживать форму", callback_data="goal_Поддерживать форму")
-            ]
-        ])
+            ]]
+        )
         await message.answer("Какая у вас цель?", reply_markup=kb)
         await state.set_state(RegistrationForm.goal)
     except ValueError:
@@ -96,11 +96,13 @@ async def handle_goal(callback: CallbackQuery, state: FSMContext):
     goal_value = callback.data.split("_", 1)[1]
     await state.update_data(goal=goal_value)
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Новичок", callback_data="skill_Новичок")],
-        [InlineKeyboardButton(text="Средний", callback_data="skill_Средний")],
-        [InlineKeyboardButton(text="Продвинутый", callback_data="skill_Продвинутый")]
-    ])
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Новичок", callback_data="skill_Новичок")],
+            [InlineKeyboardButton(text="Средний", callback_data="skill_Средний")],
+            [InlineKeyboardButton(text="Продвинутый", callback_data="skill_Продвинутый")]
+        ]
+    )
     await callback.message.answer("Ваш уровень подготовки?", reply_markup=kb)
     await callback.answer()
     await state.set_state(RegistrationForm.skill)
@@ -111,12 +113,13 @@ async def handle_skill(callback: CallbackQuery, state: FSMContext):
     await state.update_data(skill=skill_value)
 
     # Предлагаем выбрать часовой пояс
-    # Для примера всего 3 варианта, в реальном проекте может быть гораздо больше
-    tz_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="UTC", callback_data="tz_UTC")],
-        [InlineKeyboardButton(text="Europe/Moscow", callback_data="tz_Europe/Moscow")],
-        [InlineKeyboardButton(text="Asia/Almaty", callback_data="tz_Asia/Almaty")],
-    ])
+    tz_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="UTC", callback_data="tz_UTC")],
+            [InlineKeyboardButton(text="Europe/Moscow", callback_data="tz_Europe/Moscow")],
+            [InlineKeyboardButton(text="Asia/Almaty", callback_data="tz_Asia/Almaty")]
+        ]
+    )
     await callback.message.answer("Выберите ваш часовой пояс:", reply_markup=tz_kb)
     await callback.answer()
     await state.set_state(RegistrationForm.timezone)
@@ -133,7 +136,6 @@ async def handle_timezone(callback: CallbackQuery, state: FSMContext):
     try:
         user = db_session.query(User).filter_by(tg_id=tg_id).first()
         if not user:
-            # Создаём нового
             user = User(
                 tg_id=tg_id,
                 name=data["name"],
@@ -147,7 +149,6 @@ async def handle_timezone(callback: CallbackQuery, state: FSMContext):
             )
             db_session.add(user)
         else:
-            # Обновляем
             user.name = data["name"]
             user.age = data["age"]
             user.sex = data["sex"]
