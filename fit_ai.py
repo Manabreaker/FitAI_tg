@@ -1,5 +1,3 @@
-# fit_ai.py
-
 import asyncio
 import datetime
 import json
@@ -10,17 +8,13 @@ from langchain_community.chat_models import GigaChat
 
 from db import SessionLocal, User, MessageLog
 from config import GigaChatKey
-from init_bot import bot
 
-# Импортируем функции для function calling:
+# Импортируем функции из function_calling
 from function_calling.manager import (
-    create_notification_fn,
-    list_notifications_fn,
-    update_notification_fn,
-    delete_notification_fn
+    create_notification_fn
 )
 
-# Импортируем функции для уведомлений «неактивности»
+# Импортируем «неактивность» из notifications
 from notifications.manager import schedule_inactivity_job
 
 
@@ -52,74 +46,74 @@ class FitAI:
                         "time": {
                             "type": "string",
                             "format": "date-time",
-                            "description": "Локальное время (ISO8601) для уведомления, например: 2025-01-18T14:00:00+03:00"
+                            "description": "Локальное время (ISO8601), например: 2025-01-18T14:00:00+03:00"
                         }
                     },
                     "required": ["user_id", "message", "time"]
                 }
-            },
-            {
-                "name": "list_notifications",
-                "description": "Возвращает список всех уведомлений для пользователя",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "user_id": {
-                            "type": "string",
-                            "description": "ID пользователя"
-                        }
-                    },
-                    "required": ["user_id"]
-                }
-            },
-            {
-                "name": "update_notification",
-                "description": "Изменяет текст или время уведомления по его ID",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "user_id": {
-                            "type": "string",
-                            "description": "ID пользователя"
-                        },
-                        "notification_id": {
-                            "type": "integer",
-                            "description": "ID уведомления"
-                        },
-                        "message": {
-                            "type": "string",
-                            "description": "Новый текст уведомления (необязательно)",
-                            "nullable": True
-                        },
-                        "time": {
-                            "type": "string",
-                            "format": "date-time",
-                            "description": "Новое время (ISO8601) (необязательно)",
-                            "nullable": True
-                        }
-                    },
-                    "required": ["user_id", "notification_id"]
-                }
-            },
-            {
-                "name": "delete_notification",
-                "description": "Удаляет уведомление по его ID",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "user_id": {
-                            "type": "string",
-                            "description": "ID пользователя"
-                        },
-                        "notification_id": {
-                            "type": "integer",
-                            "description": "ID уведомления"
-                        }
-                    },
-                    "required": ["user_id", "notification_id"]
-                }
-            }
-        ]
+            }]
+#            {
+#                "name": "list_notifications",
+#                "description": "Возвращает список всех уведомлений для пользователя",
+#                "parameters": {
+#                    "type": "object",
+#                    "properties": {
+#                        "user_id": {
+#                            "type": "string",
+#                            "description": "ID пользователя"
+#                        }
+#                    },
+#                    "required": ["user_id"]
+#                }
+#            },
+#            {
+#                "name": "update_notification",
+#                "description": "Изменяет текст или время уведомления по его ID",
+#                "parameters": {
+#                    "type": "object",
+#                    "properties": {
+#                        "user_id": {
+#                            "type": "string",
+#                            "description": "ID пользователя"
+#                        },
+#                        "notification_id": {
+#                            "type": "integer",
+#                            "description": "ID уведомления"
+#                        },
+#                        "message": {
+#                            "type": "string",
+#                            "description": "Новый текст уведомления (необязательно)",
+#                            "nullable": True
+#                        },
+#                        "time": {
+#                            "type": "string",
+#                            "format": "date-time",
+#                            "description": "Новое время (ISO8601) (необязательно)",
+#                            "nullable": True
+#                        }
+#                    },
+#                    "required": ["user_id", "notification_id"]
+#                }
+#            },
+#            {
+#                "name": "delete_notification",
+#                "description": "Удаляет уведомление по его ID",
+#                "parameters": {
+#                    "type": "object",
+#                    "properties": {
+#                        "user_id": {
+#                            "type": "string",
+#                            "description": "ID пользователя"
+#                        },
+#                        "notification_id": {
+#                            "type": "integer",
+#                            "description": "ID уведомления"
+#                        }
+#                    },
+#                    "required": ["user_id", "notification_id"]
+#                }
+#            }
+#        ]
 
         self.llm = GigaChat(
             model="GigaChat",
@@ -159,13 +153,14 @@ class FitAI:
         system_text = (
             "Вы — FitAI, профессиональный фитнес-тренер и диетолог. "
             "Отвечайте на русском, кратко и структурировано. "
-            "Умеете вызывать функции create_notification / list_notifications / update_notification / delete_notification. "
+            "Составляете планы тренировок и питания, даете советы и отвечаете на вопросы связанные с фитнесом и диетой. "
+            "Умеете вызывать функцию create_notification. "
             "Если используете функцию, верните ТОЛЬКО JSON, без дополнительного текста. "
             "После выполнения функции сможете продолжить ответ.\n\n"
             f"Данные о пользователе:\n{user_info}\n"
             f"Схемы функций:\n{self.functions_schemas}"
             "\n\n"
-            "Примеры использования функций:\n"
+            "Примеры использования функции:\n"
             "   {\n"
             "       \"name\": \"create_notification\",\n"
             "       \"parameters\": {\n"
@@ -174,40 +169,8 @@ class FitAI:
             "           \"time\": \"2025-01-17T09:00:00+03:00\"\n"
             "       }\n"
             "   }\n\n"
-            "2. list_notifications(user_id) — получить список уведомлений.\n"
-            "   Пример:\n"
-            "   {\n"
-            "       \"name\": \"list_notifications\",\n"
-            "       \"parameters\": {\n"
-            "           \"user_id\": \"1\"\n"
-            "       }\n"
-            "   }\n"
-            "   Ответ функции:\n"
-            "   [\n"
-            "       {\"id\": 101, \"message\": \"Напоминание: время тренировки подошло!\", \"time\": \"2025-01-17T09:00:00+03:00\"},\n"
-            "       {\"id\": 102, \"message\": \"Напоминание: пора размяться!\", \"time\": \"2025-01-18T14:00:00+03:00\"}\n"
-            "   ]\n\n"
-            "3. update_notification(user_id, notification_id, message, time) — изменить текст или время уведомления.\n"
-            "   Пример:\n"
-            "   {\n"
-            "       \"name\": \"update_notification\",\n"
-            "       \"parameters\": {\n"
-            "           \"user_id\": \"1\",\n"
-            "           \"notification_id\": 101,\n"
-            "           \"message\": \"Напоминание: изменённое время тренировки!\",\n"
-            "           \"time\": \"2025-01-17T10:00:00+03:00\"\n"
-            "       }\n"
-            "   }\n\n"
-            "4. delete_notification(user_id, notification_id) — удалить уведомление.\n"
-            "   Пример:\n"
-            "   {\n"
-            "       \"name\": \"delete_notification\",\n"
-            "       \"parameters\": {\n"
-            "           \"user_id\": \"1\",\n"
-            "           \"notification_id\": 101\n"
-            "       }\n"
-            "   }\n\n"
-            "Если нужно вызвать функцию, вы должны вернуть JSON, как в примерах."
+            "Если нужно вызвать функцию, вы должны вернуть JSON, как в примере."
+            "Обязательно учитывайте timezone пользователя при планировании уведомлений."
         )
 
         # Превращаем историю диалога в LangChain-месседжи
@@ -256,28 +219,34 @@ class FitAI:
                         msg_text=fargs.get("message", ""),
                         time_str=fargs.get("time", "")
                     )
-                elif fname == "list_notifications":
-                    notifs = list_notifications_fn(
-                        user_id_str=fargs.get("user_id", "")
-                    )
-                    # Добавим "ответ" от пользователя с этим списком
-                    conversation.append(HumanMessage(
-                        content=f"NOTIFICATION_LIST={json.dumps(notifs, ensure_ascii=False)}"
-                    ))
-                elif fname == "update_notification":
-                    update_notification_fn(
-                        user_id_str=fargs.get("user_id", ""),
-                        notification_id=fargs.get("notification_id", None),
-                        new_msg=fargs.get("message", None),
-                        new_time=fargs.get("time", None)
-                    )
-                elif fname == "delete_notification":
-                    delete_notification_fn(
-                        user_id_str=fargs.get("user_id", ""),
-                        notification_id=fargs.get("notification_id", None),
-                    )
+                """
+                Далее функции для работы с уведомлениями (CRUD) в БД,
+                которые убрали из functions_calling и промпта т.к.
+                GigaChat ими все равно не пользуется, но они захламляют его помять.
+                """
+                ### elif fname == "list_notifications":
+                ###     notifs = list_notifications_fn(fargs.get("user_id", ""))
+                ###     # Чтобы модель могла «увидеть» результат,
+                ###     # добавляем новое HumanMessage со списком
+                ###     conversation.append(HumanMessage(
+                ###         content=f"NOTIFICATION_LIST={json.dumps(notifs, ensure_ascii=False)}"
+                ###     ))
 
-            # После выполнения функций даём модели ещё раз «подумать»
+                ### elif fname == "update_notification":
+                ###     update_notification_fn(
+                ###         user_id_str=fargs.get("user_id", ""),
+                ###         notification_id=fargs.get("notification_id", None),
+                ###         new_msg=fargs.get("message", None),
+                ###         new_time=fargs.get("time", None)
+                ###     )
+
+                ### elif fname == "delete_notification":
+                ###     delete_notification_fn(
+                ###         user_id_str=fargs.get("user_id", ""),
+                ###         notification_id=fargs.get("notification_id", None)
+                ###     )
+
+            # Даем модели «переосмыслить» после выполнения функций
             conversation = await self._load_history_as_langchain_messages()
             # conversation.append(HumanMessage(content="Функция выполнена успешно."))
             new_response = await asyncio.to_thread(self.llm.invoke, conversation)
@@ -316,22 +285,17 @@ class FitAI:
                 lc_messages.append(SystemMessage(content=m.content))
             elif m.role == "assistant":
                 lc_messages.append(AIMessage(content=m.content))
-            else:  # "user" или что-то ещё
+            else:  # user
                 lc_messages.append(HumanMessage(content=m.content))
 
         return lc_messages
 
     def _extract_multiple_json_objects(self, text: str):
-        """
-        Извлекаем все JSON-объекты, если ассистент прислал несколько подряд.
-        Формат может быть как массив [ {...}, {...} ], так и несколько { ...}{ ...}.
-        """
-        # Удаляем тройные кавычки и markdown-блоки
-        import re
+        # Удаляем markdown-блоки ```json
         clean_text = re.sub(r"```(?:json)?(.*?)```", r"\1", text, flags=re.DOTALL).strip()
         results = []
 
-        # 1) Пробуем распарсить всё как один JSON-массив
+        # 1) Пробуем как единый JSON-массив
         arr = self._try_parse_json(clean_text)
         if isinstance(arr, list):
             for item in arr:
@@ -340,7 +304,7 @@ class FitAI:
             if results:
                 return results
 
-        # 2) Если не массив — пробуем искать подряд идущие объекты { } { }
+        # 2) Пробуем искать { } { }
         remaining = clean_text
         while True:
             remaining = remaining.lstrip()
@@ -361,14 +325,12 @@ class FitAI:
         return results
 
     def _try_parse_json(self, raw_text: str):
-        import json
         try:
             return json.loads(raw_text)
         except json.JSONDecodeError:
             return None
 
     def _parse_first_json_object(self, raw_text: str):
-        import json
         bracket_stack = 0
         end_idx = 0
         for i, ch in enumerate(raw_text):

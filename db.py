@@ -1,5 +1,3 @@
-# db.py
-
 import datetime
 
 from sqlalchemy import (
@@ -48,7 +46,6 @@ class MessageLog(Base):
     function_args = Column(Text, nullable=True)
 
     # Дата/время отправки сообщения (в UTC)
-    # Можно хранить локальное время, но лучше UTC.
     timestamp_utc = Column(DateTime, default=datetime.datetime.utcnow)
 
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -63,11 +60,10 @@ class Notification(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     time_utc = Column(DateTime, nullable=False)  # Время напоминания (UTC)
     message = Column(String, nullable=False)
-    kind = Column(String, default="regular")  # <-- Тип уведомления: "regular" или "inactivity"
+    kind = Column(String, default="regular")  # "regular" или "inactivity"
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="notifications")
-
 
 
 engine = create_engine(SQLALCHEMY_DATABASE_URI, echo=False)

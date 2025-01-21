@@ -1,5 +1,3 @@
-# handlers/menu.py
-
 from aiogram import Router
 from aiogram.filters.command import Command
 from aiogram.types import Message
@@ -41,7 +39,8 @@ async def cmd_menu(message: Message):
 async def cmd_meal_plan(message: Message):
     user_text = (
         "Составь рацион питания для меня, учитывая мои данные, "
-        "(возраст, пол, вес, рост, цель, уровень). И не задавай дополнительных вопросов, создай напоминание для каждого приема пищи. Обязательно используй Function calling."
+        "(возраст, пол, вес, рост, цель, уровень подготовки). Я хочу чтобы ты составил сбалансированный план питания на каждый день недели.\n"
+        "Не задавай дополнительных вопросов, напиши подробный план питания. "
     )
     await handle_fitai_request(message, user_text)
 
@@ -49,8 +48,9 @@ async def cmd_meal_plan(message: Message):
 @menu_router.message(Command("workout_plan"))
 async def cmd_workout_plan(message: Message):
     user_text = (
-        "Составь программу тренировок для меня, "
-        "учитывая мои данные (возраст, пол, вес, рост, цель, уровень). И не задавай дополнительных вопросов, создай напоминание для каждой тренировки. Обязательно используй Function calling."
+        "Составь программу тренировок для меня, учитывая мои данные, "
+        "(возраст, пол, вес, рост, цель, уровень подготовки). Я хочу чтобы ты составил сбалансированную программу тренировок на неделю.\n"
+        "Не задавай дополнительных вопросов, напиши подробную программу тренировок. "
     )
     await handle_fitai_request(message, user_text)
 
@@ -68,3 +68,11 @@ async def cmd_chat(message: Message):
 
     user_text = parts[1]
     await handle_fitai_request(message, user_text)
+
+@menu_router.message()
+async def chat(message: Message):
+    """
+    Произвольный диалог с FitAI.
+    Пример: /chat Подскажи, как мне перестать есть сладкое?
+    """
+    await message.answer("Введите вопрос после /chat или воспользуйтесь /menu.")

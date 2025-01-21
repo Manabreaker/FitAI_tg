@@ -1,5 +1,8 @@
 # Telegram Bot token
-TELEGRAM_BOT_TOKEN = "7389014384:AAELuvU5Rel2JUaO13v4SWI-lqkl94yQ_6k" # "YOUR_TELEGRAM_TOKEN"
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_TOKEN" # Токен бота Telegram (получать у @BotFather)
+
+# Режим отладки (логирование)
+debug_mode = True
 
 # Параметры PostgreSQL
 POSTGRES_DB = "bot_db"
@@ -15,4 +18,4 @@ SQLALCHEMY_DATABASE_URI = (
 )
 
 # GigaChat API key
-GigaChatKey = 'ZTYwYmEwYmYtODUzMC00Y2Q5LTk4ZDktNmVkYzg5NGM3YzdkOmMwNzYwZWY5LWRhMzEtNGFiZS1hNTQyLTYyNGVkOTlkMGRlYQ==' # "YOUR_GIGACHAT_API_KEY"
+GigaChatKey = "YOUR_GIGACHAT_API_KEY" # API-ключ GigaChat (получать на сайте https://developers.sber.ru/studio/workspaces/my-space/get/gigachat-api)
